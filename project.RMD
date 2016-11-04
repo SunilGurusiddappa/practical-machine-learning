@@ -1,0 +1,126 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Sunil Gurusiddappa"
+date: "November 2, 2016"
+output: html_document
+---
+
+##Project assignment
+
+##Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+##Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment. 
+
+
+```{r}
+library(Hmisc)
+library(caret)
+library(randomForest)
+library(foreach)
+library(doParallel)
+set.seed(2048)
+options(warn=-1)
+knitr::opts_chunk$set(cache=TRUE)
+
+```
+### Getting Data
+```{r}
+# URL of the training and testing data
+train.url ="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test.url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+# file names
+train.name = "./data/pml-training.csv"
+test.name = "./data/pml-testing.csv"
+# if directory does not exist, create new
+if (!file.exists("./data")) {
+  dir.create("./data")
+}
+# if files does not exist, download the files
+if (!file.exists(train.name)) {
+  download.file(train.url, destfile=train.name, method="curl")
+}
+if (!file.exists(test.name)) {
+  download.file(test.url, destfile=test.name, method="curl")
+}
+```
+###Load data and populate all BLANK with NA
+```{r}
+
+t_data <- read.csv("./data/pml-training.csv", na.strings=c("#DIV/0!"))
+e_data <- read.csv("./data/pml-testing.csv", na.strings=c("#DIV/0!"))
+
+```
+### Convert all columns except first 7 columns to numeric 
+
+```{r}
+for(i in c(8:ncol(t_data)-1)) {t_data[,i] = as.numeric(as.character(t_data[,i]))}
+
+for(i in c(8:ncol(e_data)-1)) {e_data[,i] = as.numeric(as.character(e_data[,i]))}
+```
+
+### Remove columns for which all rows are blank/NA
+```{r}
+feature_set <- colnames(t_data[colSums(is.na(t_data)) == 0])[-(1:7)]
+model_data <- t_data[feature_set]
+feature_set
+```
+### From model data set create 75% training and 25% test data set
+```{r}
+idx <- createDataPartition(y=model_data$classe, p=0.75, list=FALSE )
+training <- model_data[idx,]
+testing <- model_data[-idx,]
+```
+#### Build random forest using parallel processing
+
+```{r}
+registerDoParallel()
+x <- training[-ncol(training)]
+y <- training$classe
+
+rf <- foreach(ntree=rep(150, 6), .combine=randomForest::combine, .packages='randomForest') %dopar% {
+randomForest(x, y, ntree=ntree) 
+}
+```
+### Error report by creating confusionMatrix
+```{r}
+predictions1 <- predict(rf, newdata=training)
+confusionMatrix(predictions1,training$classe)
+
+
+predictions2 <- predict(rf, newdata=testing)
+confusionMatrix(predictions2,testing$classe)
+```
+
+
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("./prediction/problem_id_", i, ".txt")
+   write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+
+x <- e_data
+x <- x[feature_set[feature_set!='classe']]
+answers <- predict(rf, newdata=x)
+
+answers
+
+pml_write_files(answers)
+```
+
